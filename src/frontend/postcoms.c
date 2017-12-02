@@ -876,6 +876,9 @@ killplot(struct plot *pl)
         printf("va: killplot should tfree pl->pl_env=(%p)\n", pl->pl_env);
         fflush(stdout);
     }
+    if (pl->pl_lookup_table) {
+        nghash_free(pl->pl_lookup_table, NULL, NULL);
+    }
     tfree(pl); /* va: also tfree pl itself (memory leak) */
 }
 
