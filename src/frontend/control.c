@@ -799,6 +799,11 @@ cp_evloop(char *string)
             } else {
                 cend[stackp]->co_numtimes = 1;
             }
+        } else if (eq(wlist->wl_word, "clearlabels")) {
+            while(cend[stackp]->co_prev)
+                cend[stackp] = cend[stackp]->co_prev;
+            ctl_free(cend[stackp]->co_next);
+            cend[stackp]->co_next = NULL;
         } else if (eq(wlist->wl_word, "end")) {
             /* Throw away this thing. */
             if (!cend[stackp]->co_parent) {
