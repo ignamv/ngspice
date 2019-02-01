@@ -20,6 +20,8 @@ model_numnodes(int type)
         type == INPtypelook("hicum2") ||
         type == INPtypelook("bjt504t"))
         return 5;
+    if (type == INPtypelook("r3_cmc"))
+        return 3;
 #else
     NG_IGNORE(type);
 #endif

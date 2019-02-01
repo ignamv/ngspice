@@ -121,6 +121,7 @@ int add_udn(int,Evt_Udn_Info_t **);
 #include "vsrc/vsrcitf.h"
 #include "vdmos/vdmositf.h"
 #ifdef ADMS
+#include "adms/r3_cmc/r3_cmcitf.h"
 #include "adms/hicum0/hicum0itf.h"
 #include "adms/hicum2/hicum2itf.h"
 #include "adms/mextram/bjt504titf.h"
@@ -202,6 +203,7 @@ static SPICEdev *(*static_devices[])(void) = {
 #endif
 
 #ifdef ADMS
+    (SPICEdev *(*)(void)) get_r3_cmc_info,
     (SPICEdev *(*)(void)) get_hicum0_info,
     (SPICEdev *(*)(void)) get_hicum2_info,
     (SPICEdev *(*)(void)) get_bjt504t_info,
@@ -291,7 +293,7 @@ SPICEdev ** devices(void)
 #define DEVICES_USED {"asrc", "bjt", "vbic", "bsim1", "bsim2", "bsim3", "bsim3v32", "bsim3v2", "bsim3v1", "bsim4", "bsim4v5", "bsim4v6", "bsim4v7", \
                       "bsim4soi", "bsim3soipd", "bsim3soifd", "bsim3soidd", "hisim2", "hisimhv1",  "hisimhv2", \
                       "cap", "cccs", "ccvs", "csw", "dio", "hfet", "hfet2", "ind", "isrc", "jfet", "ltra", "mes", "mesa" ,"mos1", "mos2", "mos3", \
-                      "mos6", "mos9", "res", "soi3", "sw", "tra", "urc", "vccs", "vcvs", "vsrc", "hicum0", "hicum2", "bjt504t", "ekv", "psp102"}
+                      "mos6", "mos9", "res", "soi3", "sw", "tra", "urc", "vccs", "vcvs", "vsrc", "r3_cmc", "hicum0", "hicum2", "bjt504t", "ekv", "psp102"}
 #else
 #define DEVICES_USED {"asrc", "bjt", "vbic", "bsim1", "bsim2", "bsim3", "bsim3v32", "bsim3v2", "bsim3v1", "bsim4", "bsim4v5", "bsim4v6", "bsim4v7", \
                       "bsim4soi", "bsim3soipd", "bsim3soifd", "bsim3soidd", "hisim2", "hisimhv1", "hisimhv2", \

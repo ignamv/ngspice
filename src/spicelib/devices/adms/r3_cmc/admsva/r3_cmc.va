@@ -1,0 +1,669 @@
+
+`define VERSION     1
+`define SUBVERSION  0
+`define REVISION    0
+`define LEVEL       1003
+
+//
+//  Verilog-A definition of the CMC 3-terminal resistor model, r3_cmc.
+//
+//  See the file r3_cmc.txt for a quick description of the model,
+//  and see the r3_cmc_release1.0.0_2007Jun12.pdf file for complete documentation.
+//
+
+//
+//  Release:  1.0.0
+//  Date:     2007 June 12
+//  Comments: First official release
+//
+
+`include "discipline.h"
+`include "macrosAndDefines_cmc_release1.0.0_2007Jun12.include"
+
+//
+//  Start of r3_cmc model code
+//
+
+module r3_cmc(n1,nc,n2);
+
+//
+//  Node definitions (the local temperature rise is, for now, internal)
+//
+
+inout      n1,n2,nc;
+electrical n1,n2,nc;
+electrical i1,i2;
+thermal    dt;
+
+//
+//  Branch definitions
+//
+
+branch (n1,i1)   b_re1;   // terminal 1 end resistance
+branch (n1,i1)   b_ne1;   // terminal 1 end resistance noise
+branch (n2,i2)   b_re2;   // terminal 2 end resistance
+branch (n2,i2)   b_ne2;   // terminal 2 end resistance noise
+branch (i2,i1)   b_rb;    // main resistor body branch
+branch (nc,i1)   b_pc1;   // terminal 1 parasitics and nc resistance modulation control
+branch (nc,i2)   b_pc2;   // terminal 2 parasitics and nc resistance modulation control
+branch (dt   )   b_rth;   // local thermal branch
+branch (dt   )   b_ith;   // local thermal branch, 2nd definition is to fool floating node detection in some compilers
+
+//
+//  Instance parameters
+//
+
+`IPM
+`IPRoo( w         ,   1.0e-06 ,"m"         ,   0.0,   inf, "design width  of resistor body")
+`IPRoo( l         ,   1.0e-06 ,"m"         ,   0.0,   inf, "design length of resistor body")
+`IPRco( wd        ,   0.0     ,"m"         ,   0.0,   inf, "dogbone width (total; not per side)")
+`IPRco( a1        ,   0.0     ,"m^2"       ,   0.0,   inf, "area       of node n1 partition")
+`IPRco( p1        ,   0.0     ,"m"         ,   0.0,   inf, "perimeter  of node n1 partition")
+`IPIco( c1        ,   0       ,""          ,   0  ,   inf, "# contacts at node n1 terminal")
+`IPRco( a2        ,   0.0     ,"m^2"       ,   0.0,   inf, "area       of node n2 partition")
+`IPRco( p2        ,   0.0     ,"m"         ,   0.0,   inf, "perimeter  of node n2 partition")
+`IPIco( c2        ,   0       ,""          ,   0  ,   inf, "# contacts at node n2 terminal")
+`IPRnb( trise     ,   0.0     ,"degC"                    , "local temperature delta to ambient (before self-heating)")
+`IPIsw( sw_noise  ,   1       ,""                        , "switch for including noise:   0=no and 1=yes")
+`IPIsw( sw_et     ,   1       ,""                        , "switch for self-heating:      0=no and 1=yes")
+`IPIsw( sw_mman   ,   0       ,""                        , "switch for mismatch analysis: 0=no and 1=yes")
+`IPRnb( nsmm_rsh  ,   0.0     ,""                        , "number of standard deviations of local variation for rsh")
+`IPRnb( nsmm_w    ,   0.0     ,""                        , "number of standard deviations of local variation for w")
+`IPRnb( nsmm_l    ,   0.0     ,""                        , "number of standard deviations of local variation for l")
+
+
+//
+//  Special model parameters, some may be simulator global parameters
+//
+
+`MPInb( version   ,   `VERSION,""                        , "model version")
+`MPInb( subversion,`SUBVERSION,""                        , "model subversion")
+`MPInb( revision  ,  `REVISION,""                        , "model revision")
+`MPInb( level     ,  `LEVEL   ,""                        , "model level")
+`MPIty( type      ,  -1       ,""                        , "resistor type: -1=n-body and +1=p-body")
+`MPRoc( scale     ,   1.0     ,""          ,   0.0,   1.0, "scale  factor for instance geometries")
+`MPRco( shrink    ,   0.0     ,"%"         ,   0.0, 100.0, "shrink percentage for instance geometries")
+`MPRcc( tmin      ,-100.0     ,"degC"      ,-250.0,  27.0, "minimum ambient temperature")
+`MPRcc( tmax      , 500.0     ,"degC"      ,  27.0,1000.0, "maximum ambient temperature")
+`MPRoo( rthresh   ,   1.0e-03,"Ohm"        ,   0.0,   inf, "threshold to switch end resistance to V=I*R form")
+`MPRco( gmin      ,   1.0e-12 ,"S"         ,   0.0,   inf, "minimum conductance")
+`MPRoo( imax      ,   1.0     ,"A"         ,   0.0,   inf, "current at which to linearize diode currents")
+
+//
+//  General model parameters
+//
+
+`MPRcc( tnom      ,  27.0     ,"degC"      ,-250.0,1000.0, "nominal (reference) temperature")
+`MPRco( lmin      ,   0.0     ,"um"        ,   0.0,   inf, "minimum allowed drawn length")
+`MPRoo( lmax      ,   9.9e09  ,"um"        ,  lmin,   inf, "maximum allowed drawn length")
+`MPRco( wmin      ,   0.0     ,"um"        ,   0.0,   inf, "minimum allowed drawn width")
+`MPRoo( wmax      ,   9.9e09  ,"um"        ,  wmin,   inf, "maximum allowed drawn width")
+`MPRoo( jmax      , 100.0    ,"A/um"       ,   0.0,   inf, "maximum current density")
+`MPRoo( vmax      ,   9.9e09 ,"V"          ,   0.0,   inf, "maximum voltage w.r.t. control node nc")
+`MPRcc( tminclip  ,-100.0    ,"degC"       ,-250.0,  27.0, "clip minimum temperature")
+`MPRcc( tmaxclip  , 500.0    ,"degC"       ,  27.0,1000.0, "clip maximum temperature")
+
+//
+//  Basic resistance (current) model parameters
+//
+
+`MPRoo( rsh       , 100.0     ,"Ohm/sq"    ,   0.0,   inf, "sheet resistance")
+`MPRnb( xw        ,   0.0     ,"um"                      , "width  offset (total)")
+`MPRnb( nwxw      ,   0.0     ,"um^2"                    , "narrow width width offset correction coefficient")
+`MPRnb( wexw      ,   0.0     ,"um"                      , "webbing effect width offset correction coefficient (for dogboned devices)")
+`MPRoo( fdrw      ,   1.0     ,"um"        ,   0.0,   inf, "finite doping  width offset reference width")
+`MPRnb( fdxwinf   ,   0.0     ,"um"                      , "finite doping  width offset width value for wide devices")
+`MPRnb( xl        ,   0.0     ,"um"                      , "length offset (total)")
+`MPRnb( xlw       ,   0.0     ,""                        , "width dependence of length offset")
+`MPRnb( dxlsat    ,   0.0     ,"um"                      , "additional length offset for velocity saturation calculation")
+`MPRcc( nst       ,   1.0     ,""          ,   0.1,   5.0, "subthreshold slope parameter")
+`MPRco( ats       ,   0.0     ,"V"         ,   0.0,   inf, "saturation smoothing parameter")
+`MPRcc( dfinf     ,   0.01    ,"/V^0.5"    ,1.0e-4,  10.0, "depletion factor for wide/long device")
+`MPRnb( dfw       ,   0.0     ,"um/V^0.5"                , "depletion factor 1/w coefficient")
+`MPRnb( dfl       ,   0.0     ,"um/V^0.5"                , "depletion factor 1/l coefficient")
+`MPRnb( dfwl      ,   0.0     ,"um^2/V^0.5"              , "depletion factor 1/(w*l) coefficient")
+`MPIsw( sw_dfgeo  ,   1       ,""                        , "switch for depletion factor geometry dependence: 0=drawn and 1=effective")
+`MPRcc( dp        ,   2.0     ,"V"         ,   0.1,1000.0, "depletion potential")
+`MPRcc( ecrit     ,   4.0     ,"V/um"      ,  0.02,1000.0, "velocity saturation critical field")
+`MPRcc( ecorn     ,   0.4     ,"V/um"      ,  0.01, ecrit, "velocity saturation corner field")
+`MPRcc( du        ,   0.02    ,""          ,   0.0,1000.0, "mobility reduction at ecorn")
+`MPRco( rc        ,   0.0     ,"Ohm"       ,   0.0,   inf, "resistance per contact")
+`MPRco( rcw       ,   0.0     ,"Ohm*um"    ,   0.0,   inf, "width adjustment for contact resistance")
+
+//
+//  Parasitic model parameters (diodes and dielectric)
+//
+
+`MPRcc( fc        ,   0.9     ,""          ,   0.0,  0.99, "depletion capacitance linearization factor")
+`MPRco( isa       ,   0.0     ,"A/um^2"    ,   0.0,   inf, "diode saturation current per unit area")
+`MPRoo( na        ,   1.0     ,""          ,   0.0,   inf, "ideality factor for isa")
+`MPRco( ca        ,   0.0     ,"F/um^2"    ,   0.0,   inf, "fixed capacitance per unit area")
+`MPRco( cja       ,   0.0     ,"F/um^2"    ,   0.0,   inf, "depletion capacitance per unit area")
+`MPRoo( pa        ,   0.75    ,"V"         ,   0.0,   inf, "built-in potential  for cja")
+`MPRoo( ma        ,   0.33    ,""          ,   0.0,   1.0, "grading coefficient for cja")
+`MPRnb( aja       ,  -0.5     ,"V"                       , "smoothing parameter for cja")
+`MPRco( isp       ,   0.0     ,"A/um"      ,   0.0,   inf, "diode saturation current per unit perimeter")
+`MPRoo( np        ,   1.0     ,""          ,   0.0,   inf, "ideality factor for isp")
+`MPRco( cp        ,   0.0     ,"F/um"      ,   0.0,   inf, "fixed capacitance per unit perimeter")
+`MPRco( cjp       ,   0.0     ,"F/um"      ,   0.0,   inf, "depletion capacitance per unit perimeter")
+`MPRoo( pp        ,   0.75    ,"V"         ,   0.0,   inf, "built-in potential  for cjp")
+`MPRoo( mp        ,   0.33    ,""          ,   0.0,   1.0, "grading coefficient for cjp")
+`MPRnb( ajp       ,  -0.5     ,"V"                       , "smoothing parameter for cjp")
+`MPRco( vbv       ,   0.0     ,"V"         ,   0.0,   inf, "breakdown voltage")
+`MPRoo( ibv       ,   1.0e-06 ,"A"         ,   0.0,   inf, "current at breakown")
+`MPRoo( nbv       ,   1.0     ,""          ,   0.0,   inf, "ideality factor for breakdown current")
+
+//
+//  1/f noise model parameters
+//
+
+`MPRco( kfn       ,   0.0     ,""          ,   0.0,   inf, "flicker noise coefficient (unit depends on afn)")
+`MPRoo( afn       ,   2.0     ,""          ,   0.0,   inf, "flicker noise current exponent")
+`MPRoo( bfn       ,   1.0     ,""          ,   0.0,   inf, "flicker noise 1/f exponent")
+`MPIsw( sw_fngeo  ,   0       ,""                        , "switch for flicker noise geometry calculation: 0=drawn and 1=effective")
+
+//
+//  Temperature dependence model parameters
+//
+
+`MPRnb( ea        ,   1.12    ,"V"                       , "activation voltage for diode temperature dependence")
+`MPRnb( xis       ,   3.0     ,""                        , "exponent for diode temperature dependence")
+`MPRnb( tc1       ,   0.0     ,"/K"                      , "resistance linear    TC")
+`MPRnb( tc2       ,   0.0     ,"/K^2"                    , "resistance quadratic TC")
+`MPRnb( tc1l      ,   0.0     ,"um/K"                    , "resistance linear    TC length coefficient")
+`MPRnb( tc2l      ,   0.0     ,"um/K^2"                  , "resistance quadratic TC length coefficient")
+`MPRnb( tc1w      ,   0.0     ,"um/K"                    , "resistance linear    TC width  coefficient")
+`MPRnb( tc2w      ,   0.0     ,"um/K^2"                  , "resistance quadratic TC width  coefficient")
+`MPRnb( tc1rc     ,   0.0     ,"/K"                      , "contact resistance linear    TC")
+`MPRnb( tc2rc     ,   0.0     ,"/K^2"                    , "contact resistance quadratic TC")
+`MPRnb( tc1kfn    ,   0.0     ,"/K"                      , "flicker noise coefficient linear TC")
+`MPRnb( tc1vbv    ,   0.0     ,"/K"                      , "breakdown voltage linear    TC")
+`MPRnb( tc2vbv    ,   0.0     ,"/K^2"                    , "breakdown voltage quadratic TC")
+`MPRnb( tc1nbv    ,   0.0     ,"/K"                      , "breakdown ideality factor linear TC")
+
+//
+//  Thermal resistance and capacitance model parameters
+//
+
+`MPRoo( gth0      ,   1.0e+06 ,"W/K"       ,   0.0,   inf, "thermal conductance fixed component")
+`MPRco( gthp      ,   0.0     ,"W/K/um"    ,   0.0,   inf, "thermal conductance perimeter component")
+`MPRco( gtha      ,   0.0     ,"W/K/um^2"  ,   0.0,   inf, "thermal conductance area component")
+`MPRco( gthc      ,   0.0     ,"W/K"       ,   0.0,   inf, "thermal conductance contact component")
+`MPRco( cth0      ,   0.0     ,"s*W/K"     ,   0.0,   inf, "thermal capacitance fixed component")
+`MPRco( cthp      ,   0.0     ,"s*W/K/um"  ,   0.0,   inf, "thermal capacitance perimeter component")
+`MPRco( ctha      ,   0.0     ,"s*W/K/um^2",   0.0,   inf, "thermal capacitance area component")
+`MPRco( cthc      ,   0.0     ,"s*W/K"     ,   0.0,   inf, "thermal capacitance contact component")
+
+//
+//  Statistical model parameters
+//
+
+`MPRnb( nsig_rsh  ,   0.0     ,""                        , "number of standard deviations of global variation for rsh")
+`MPRnb( nsig_w    ,   0.0     ,""                        , "number of standard deviations of global variation for w")
+`MPRnb( nsig_l    ,   0.0     ,""                        , "number of standard deviations of global variation for l")
+`MPRco( sig_rsh   ,   0.0     ,"%",            0.0,   inf, "global variation standard deviation for rsh (relative)")
+`MPRco( sig_w     ,   0.0     ,"um",           0.0,   inf, "global variation standard deviation for w   (absolute)")
+`MPRco( sig_l     ,   0.0     ,"um",           0.0,   inf, "global variation standard deviation for l   (absolute)")
+`MPRco( smm_rsh   ,   0.0     ,"%um",          0.0,   inf, "local  variation standard deviation for rsh (relative)")
+`MPRco( smm_w     ,   0.0     ,"um^1.5",       0.0,   inf, "local  variation standard deviation for w   (absolute)")
+`MPRco( smm_l     ,   0.0     ,"um^1.5",       0.0,   inf, "local  variation standard deviation for l   (absolute)")
+`MPIsw( sw_mmgeo  ,   0       ,""                        , "switch for flicker noise geometry calculation: 0=drawn and 1=effective")
+
+//
+//  Supported aliases for parameters
+//
+
+`ALIAS(dtemp,trise)
+`ALIAS(dta,trise)
+
+//
+//  These variables will be displayed as part of operating point information.
+//
+
+`OPP( v       ,"V"    ,"voltage across resistor")
+`OPP( ibody   ,"A"    ,"current through resistor body")
+`OPP( power   ,"W"    ,"dissipated power")
+`OPP( leff_um ,"um"   ,"effective electrical length in um")
+`OPP( weff_um ,"um"   ,"effective electrical width  in um")
+`OPP( r0      ,"Ohm"  ,"zero-bias resistance (per segment)")
+`OPP( r_dc    ,"Ohm"  ,"DC resistance (including bias dependence and m)")
+`OPP( r_ac    ,"Ohm"  ,"AC resistance (including bias dependence and m)")
+`OPP( rth     ,"K/W"  ,"thermal resistance")
+`OPP( cth     ,"s*W/K","thermal capacitance")
+`OPP( dt_et   ,"K"    ,"self-heating temperature rise")
+
+//
+//  Intermediate variables used in calculations
+//
+
+    real scaleFac, shrinkL, rthrMod, gminMod, imaxMod, mMod;
+    real lFactor, aFactor, tiniK, ecrneff, dufctr, uoff, de, fouratsq;
+    real tdevC, tdevK, xleff, w_um, l_um, leffE_um, g0;
+    real wd_um, a1_um2, p1_um, a2_um2, p2_um, a_um2, p_um, len, wid, fctr1;
+    real delr_rsh, dfmin, df, dfsq, gth, vpo, lde, tc1e, tc2e;
+    real rc1_tnom, rc2_tnom, gc, tcr, tcrc, vmax_p, vmax_a, vmax_b;
+    real geff, Vrb, Vc1, Vc2, rt, delt, vtv;
+    real isa_t, isp_t, pa_t, cja_t, pp_t, cjp_t, kfn_t;
+    real Irb, Ip1, Ip2, Ib1, Ib2, Ith, Irth, Qcp1, Qcp2, Qcth;
+    real wn, fn, didt, g_ac, vbv_t, nbv_t;
+
+analog begin
+
+//
+//  Code independent of bias or instance parameters
+//
+
+//    begin : initializeModel
+    @(initial_step) begin
+        if (`LEVEL!=level) begin
+            `ERROR("ERROR: r3_cmc model called with incorrect level parameter")
+        end
+        if (`VERSION!=version) begin
+            `ERROR("ERROR: r3_cmc model version is inconsistent with the parameter set")
+        end
+        if (`SUBVERSION<subversion) begin
+            `ERROR("ERROR: r3_cmc model subversion is less than required for the parameter set")
+        end
+        `SCALE
+        `SHRINKL
+        `RTHRESH
+        `GMIN
+        `IMAX
+        `MFACTOR_DEC
+        lFactor  =  shrinkL*scaleFac*1.0e6;     // conversion factor from instance l to um
+        aFactor  =  lFactor*lFactor;            // area conversion factor
+        tiniK    = `TABS_NIST2004+tnom;
+        ecrneff  =  sqrt(ecorn*ecorn+4.0*du*du*ecrit*ecrit)-2.0*du*ecrit;
+        dufctr   =  du*ecrneff/ecrit;
+        uoff     =  sqrt((ecrneff*ecrneff/(ecrit*ecrit))+4.0*dufctr);
+        de       =  ecrit-ecorn;
+        fouratsq =  4.0*ats*ats;
+        dfmin    =  sqrt(dp)/(dp+1.0e4);       // minimum value of df to ensure numerical stability
+    end // initializeModel
+
+//
+//  Code independent of bias but dependent on instance parameters
+//
+
+//    begin : initializeInstance
+    @(initial_step) begin
+        tdevC    = $temperature+trise-`TABS_NIST2004;    // device temperature
+        if (tdevC<tmin) begin
+            `WARNING("WARNING: ambient temperature is lower than allowed minimum");
+        end
+        if (tdevC>tmax) begin
+            `WARNING("WARNING: ambient temperature is higher than allowed maximum");
+        end
+        w_um     =  w*lFactor;                  // w       in um
+        l_um     =  l*lFactor;                  // l       in um
+        if (w_um<wmin) begin
+            `WARNING("WARNING: drawn width is smaller than allowed minimum");
+        end
+        if (w_um>wmax) begin
+            `WARNING("WARNING: drawn width is greater than allowed maximum");
+        end
+        if (l_um<lmin) begin
+            `WARNING("WARNING: drawn length is smaller than allowed minimum");
+        end
+        if (l_um>lmax) begin
+            `WARNING("WARNING: drawn length is greater than allowed maximum");
+        end
+        wd_um    =  wd*lFactor;                         // dogbone in um
+        a1_um2   =  a1*aFactor;                         // a1      in um^2
+        p1_um    =  p1*lFactor;                         // p1      in um
+        a2_um2   =  a2*aFactor;                         // a2      in um^2
+        p2_um    =  p2*lFactor;                         // p2      in um
+        a_um2    =  l_um*w_um;                          // area    in um^2
+        p_um     =  2.0*l_um+((c1>0)+(c2>0))*w_um;      // perim   in um
+        xleff    =  0.5*((c1>0)+(c2>0))*(xl+xlw/w_um);
+        weff_um  = (w_um+xw+(nwxw/w_um)+fdxwinf*(1.0-exp(-w_um/fdrw)))/(1.0-wexw*wd_um/a_um2);
+        leff_um  =  l_um+xleff;
+
+//
+//      Statistical variation, including physical mismatch variation.
+//      Note the scaling with 1.0/sqrt(m), and that
+//      the resistance is varied in a log-normal fashion, this
+//      is physical and avoids negative resistance values for
+//      large variations.
+//      The statistical variation is composed of two parts, global
+//      and local (mismatch). The total variance is the sum of the global
+//      variance, which does not depend on geometry, and the
+//      mismatch variance, which does depend on geometry.
+//      If mismatch analysis is not being done (sw_mman=0) then the
+//      "global" variance is increased by the mismatch variance,
+//      this captures the correct, geometry dependent magnitude,
+//      although it assumes perfect correlation between all devices
+//      which is not correct for the mismatch component.
+//      The code below which bypasses the variation calculation
+//      if variances are zero is to avoid problems with derivative
+//      calculation when the argument of sqrt() is zero.
+//
+
+        if (sw_mmgeo) begin
+            wid      =  weff_um;
+            len      =  leff_um;
+        end else begin
+            wid      =  w_um;
+            len      =  l_um;
+        end
+        if (sw_mman) begin
+            weff_um  =  weff_um+nsig_w*sig_w+nsmm_w*smm_w/sqrt(mMod*len);
+            leff_um  =  leff_um+nsig_l*sig_l+nsmm_l*smm_l/sqrt(mMod*wid);
+            delr_rsh =  exp(0.01*(nsig_rsh*sig_rsh+nsmm_rsh*smm_rsh/sqrt(mMod*len*wid)));
+        end else begin
+            if ((smm_w>0.0)||(sig_w>0.0)) begin
+                fctr1    =  smm_w/sqrt(mMod*len);
+                weff_um  =  weff_um+nsig_w*sqrt(sig_w*sig_w+fctr1*fctr1);
+            end
+            if ((smm_l>0.0)||(sig_l>0.0)) begin
+                fctr1    =  smm_l/sqrt(mMod*wid);
+                leff_um  =  leff_um+nsig_l*sqrt(sig_l*sig_l+fctr1*fctr1);
+            end
+            if ((smm_rsh>0.0)||(sig_rsh>0.0)) begin
+                fctr1    =  smm_rsh/sqrt(mMod*len*wid);
+                delr_rsh =  exp(0.01*nsig_rsh*sqrt(sig_rsh*sig_rsh+fctr1*fctr1));
+            end else begin
+                delr_rsh =  1.0;
+            end
+        end
+        if (weff_um<=0.0) begin
+            `ERROR("ERROR: calculated effective r3_cmc resistor width is <= 0.0")
+        end
+        if (leff_um<=0.0) begin
+            `ERROR("ERROR: calculated effective r3_cmc resistor length is <= 0.0")
+        end
+        leffE_um =  leff_um+dxlsat;
+        if (leffE_um<=0.0) begin
+            `ERROR("ERROR: calculated effective r3_cmc resistor length for velocity saturation is <= 0.0")
+        end
+
+//
+//      Mappings for parameters that depend on geometry
+//
+
+        if (sw_dfgeo) begin
+            wid      =  weff_um;
+            len      =  leff_um;
+        end else begin
+            wid      =  w_um;
+            len      =  l_um;
+        end
+        df       =  dfinf+(dfw*len+dfl*wid+dfwl)/(len*wid);
+        df       = `MAX(df,dfmin);             // clip df for numerical stability
+        dfsq     =  df*df;                     // this term appears in several expressions, precalculate
+        r0       =  rsh*delr_rsh*(leff_um/weff_um)*(1.0-df*sqrt(dp));
+        if (r0<=1.0e-99) begin
+            `ERROR("ERROR: calculated zero bias resistance is too small");
+        end
+        if ((rc>0.0)&&(c1>0)) begin
+            rc1_tnom =  (rc+rcw/w_um)/c1;
+        end else begin
+            rc1_tnom =  0.0;
+        end
+        if ((rc>0.0)&&(c2>0)) begin
+            rc2_tnom =  (rc+rcw/w_um)/c2;
+        end else begin
+            rc2_tnom =  0.0;
+        end
+        gth      =  gth0+gthp*p_um+gtha*a_um2+gthc*(c1+c2); // thermal conductance
+        cth      =  cth0+cthp*p_um+ctha*a_um2+cthc*(c1+c2); // thermal capacitance
+        vpo      =  0.5/(df*df)-dp*0.5;        // voltage when mobile carrier density=0, for subthreshold limiting
+        lde      =  leffE_um*de;               // (effective length)*delta_field for velocity saturation
+        if (lde>1.0e5) begin
+            lde      =  1.0e5;                 // limit for numerical stability
+        end
+        tc1e     =  tc1+tc1w/weff_um+0.5*((c1>0)+(c2>0))*tc1l/leff_um;
+        tc2e     =  tc2+tc2w/weff_um+0.5*((c1>0)+(c2>0))*tc2l/leff_um;
+    end // initializeInstance
+
+//
+//  DC bias dependent quantities, as self-heating is always in effect
+//  the temperature dependencies are also coded here.
+//
+
+    begin : evaluateStatic
+        dt_et    =  Temp(b_rth);
+        Vrb      = -type*V(b_rb);
+        Vc1      = -type*V(b_pc1);
+        Vc2      = -type*V(b_pc2);
+
+//
+//      Temperature dependent calculations
+//
+
+        tdevC    = $temperature+trise+dt_et-`TABS_NIST2004;
+        `CLIPB1p0(tdevC,tdevC,tminclip,tmaxclip);
+        tdevK    =  tdevC+`TABS_NIST2004;
+        vtv      = `KB_NIST2004*tdevK/`QQ_NIST2004;
+        rt       =  tdevK/tiniK;
+        delt     =  tdevK-tiniK;
+        tcr      =  (1.0+delt*(tc1e+delt*tc2e));
+        `CLIPL0p1(tcr,tcr,0.01)
+        g0       =  1.0/(r0*tcr);
+        tcrc     =  (1.0+delt*(tc1rc+delt*tc2rc));
+        `CLIPL0p1(tcrc,tcrc,0.01)
+
+        if (isa>0.0) begin
+            isa_t    =  isa*exp((-ea*(1.0-rt)/vtv+xis*ln(rt))/na);
+            vmax_a   =  na*vtv*ln(1.0+imaxMod/isa_t);
+        end else begin
+            isa_t    =  0.0;
+            vmax_a   =  0.0;
+        end
+        if (isp>0.0) begin
+            isp_t    =  isp*exp((-ea*(1.0-rt)/vtv+xis*ln(rt))/np);
+            vmax_p   =  np*vtv*ln(1.0+imaxMod/isp_t);
+        end else begin
+            isp_t    =  0.0;
+            vmax_p   =  0.0;
+        end
+        if (cja>0.0) begin
+            `psibi(pa_t,pa,ea,vtv,rt,blockPa)
+            cja_t    =  cja*pow((pa/pa_t),ma);
+        end else begin
+            pa_t     =  pa;
+            cja_t    =  0.0;
+        end
+        if (cjp>0.0) begin
+            `psibi(pp_t,pp,ea,vtv,rt,blockPp)
+            cjp_t    =  cjp*pow((pp/pp_t),mp);
+        end else begin
+            pp_t     =  pp;
+            cjp_t    =  0.0;
+        end
+        kfn_t    =  (1+delt*tc1kfn)*kfn;
+        kfn_t    = `MAX(kfn_t,0.0);
+        if (vbv>0) begin
+            vbv_t    =  vbv*(1.0+delt*(tc1vbv+delt*tc2vbv));
+            vbv_t    = `MAX(vbv_t,0.0);
+            nbv_t    =  nbv*(1.0+tc1nbv*delt);
+            vmax_b   =  nbv_t*vtv*ln(exp(-vbv_t/(nbv_t*vtv))+imaxMod/ibv);
+        end else begin
+            vbv_t    =  vbv;
+            nbv_t    =  nbv;
+            vmax_b   =  1.0; // dummy value for vbv=0.0
+        end
+
+//
+//      Macro that calculates core r3_cmc current for the resistor body
+//
+
+        `r3Ibody(Irb,geff,Vrb,Vc1,Vc2,vpo,nst,vtv,dp,df,dfsq,lde,leffE_um,ecrneff,ecrit,dufctr,uoff,fouratsq,g0,r3Body)
+
+//
+//      Diode currents (note Vc1 and Vc2 are for an n-type body in a p-type tub)
+//      including gmin components (these are not included if there is no
+//      diode component, e.g. for poly resistors).
+//
+
+        if ((a1_um2*isa_t+p1_um*isp_t)>0.0) begin
+            `pnjIap(Ip1,Vc1,vtv,a1_um2,isa_t,na,vmax_a,p1_um,isp_t,np,vmax_p,Ip1Block)
+            `pnjIbkd(Ib1,Vc1,ibv,vbv_t,vtv,nbv_t,vmax_b,Ib1Block);
+            Ip1      =  Ip1+Ib1+gminMod*Vc1;
+        end else begin
+            Ip1      =  0.0;
+        end
+        if ((a2_um2*isa_t+p2_um*isp_t)>0.0) begin
+            `pnjIap(Ip2,Vc2,vtv,a2_um2,isa_t,na,vmax_a,p2_um,isp_t,np,vmax_p,Ip2Block)
+            `pnjIbkd(Ib2,Vc2,ibv,vbv_t,vtv,nbv_t,vmax_b,Ib2Block);
+            Ip2      =  Ip2+Ib2+gminMod*Vc2;
+        end else begin
+            Ip2      =  0.0;
+        end
+
+//
+//      Self-heating components
+//
+
+        power    =  (Irb*Vrb+Ip1*Vc1+Ip2*Vc2)*`MFACTOR_USE+I(b_re1)*V(b_re1)+I(b_re2)*V(b_re2);
+        Ith      = -sw_et*power;   // negative as it flows dt->0
+        Irth     =  gth*dt_et*`MFACTOR_USE;
+
+//
+//      Polarity flipping, mfactor, and gmin handling ($mfactor is automatic for __VAMS_COMPACT_MODELING__)
+//
+
+        Irb      = -type*Irb*`MFACTOR_USE;
+        Ip1      = -type*Ip1*`MFACTOR_USE;
+        Ip2      = -type*Ip2*`MFACTOR_USE;
+
+//
+//      Contact resistance calculations are handled in the loadStatic block
+//
+
+//
+//      Excessive current nd voltage warnings
+//
+
+        if (abs(Irb/weff_um)>jmax) begin
+            `WARNING("WARNING: Irb current density is greater than specified by jmax");
+        end
+        if (abs(Ip1/weff_um)>jmax) begin
+            `WARNING("WARNING: Ip1 current density is greater than specified by jmax");
+        end
+        if (abs(Vc1)>vmax) begin
+            `WARNING("WARNING: V(i1,c) voltage is greater than specified by vmax");
+        end
+        if (abs(Ip2/weff_um)>jmax) begin
+            `WARNING("WARNING: Ip2 current density is greater than specified by jmax");
+        end
+        if (abs(Vc2)>vmax) begin
+            `WARNING("WARNING: V(i2,c) voltage is greater than specified by vmax");
+        end
+    end // evaluateStatic
+
+    begin : evaluateDynamic
+
+//
+//      Diode charges (note Vc1 and Vc2 are for an n-type body in a p-type tub)
+//
+
+        `pnjQap(Qcp1,Vc1,a1_um2,cja_t,pa_t,ma,fc,aja,p1_um,cjp_t,pp_t,mp,fc,ajp,Qcp1Block,Qcp11,Qcp12);
+        `pnjQap(Qcp2,Vc2,a2_um2,cja_t,pa_t,ma,fc,aja,p2_um,cjp_t,pp_t,mp,fc,ajp,Qcp2Block,Qcp21,Qcp22);
+
+//
+//      Polarity flipping and m handling
+//      Fixed capacitance is added as well (for poly resistors with dielectric isolation),
+//      as is the charge on the thermal capacitance
+//
+
+        Qcp1     = -type*(Qcp1+(ca*a1_um2+cp*p1_um)*Vc1)*`MFACTOR_USE;
+        Qcp2     = -type*(Qcp2+(ca*a2_um2+cp*p2_um)*Vc2)*`MFACTOR_USE;
+        Qcth     =  dt_et*cth*`MFACTOR_USE;
+    end // evaluateDynamic
+
+    begin : loadStatic
+        I(b_rb)  <+  Irb;
+        I(b_pc1) <+  Ip1;
+        I(b_pc2) <+  Ip2;
+      Pwr(b_rth) <+  Irth;
+      Pwr(b_ith) <+  Ith;
+        if ((rc1_tnom/mMod)<=rthrMod) begin    // V=R*I formulation
+            V(b_re1) <+  I(b_re1)*rc1_tnom*tcrc/`MFACTOR_USE;
+        end else begin                         // I=G*V formulation
+            I(b_re1) <+  V(b_re1)*`MFACTOR_USE/(rc1_tnom*tcrc);
+        end
+        if ((rc2_tnom/mMod)<=rthrMod) begin    // V=R*I formulation
+            V(b_re2) <+  I(b_re2)*rc2_tnom*tcrc/`MFACTOR_USE;
+        end else begin                         // I=G*V formulation
+            I(b_re2) <+  V(b_re2)*`MFACTOR_USE/(rc2_tnom*tcrc);
+        end
+    end // loadStatic
+
+    begin : loadDynamic
+        I(b_pc1) <+  ddt(Qcp1);
+        I(b_pc2) <+  ddt(Qcp2);
+      Pwr(b_rth) <+  ddt(Qcth);
+    end // loadDynamic
+
+//
+//  Noise contributions
+//
+
+//    begin : noise
+     if (analysis("noise")) begin
+        if (sw_noise) begin
+            if (sw_fngeo) begin
+                len      =  leff_um;
+                wid      =  weff_um;
+            end else begin
+                len      =  l_um;
+                wid      =  w_um;
+            end
+            wn       = `MFACTOR_USE*4.0*`KB_NIST2004*tdevK*geff;
+            fn       = `MFACTOR_USE*kfn_t*pow((abs(Irb/(`MFACTOR_USE*wid))),afn)*wid/len;
+            I(b_rb)  <+ white_noise(wn,"body thermal noise");
+            I(b_rb)  <+ flicker_noise(fn,bfn,"body 1overf noise");
+            if (rc1_tnom>0) begin
+                gc       =  1.0/(rc1_tnom*tcrc);
+            end else begin
+                gc       =  0.0;
+            end
+            I(b_ne1) <+ white_noise(`MFACTOR_USE*4.0*`KB_NIST2004*tdevK*gc,"end 1 resistance thermal noise");
+            if (rc2_tnom>0) begin
+                gc       =  1.0/(rc2_tnom*tcrc);
+            end else begin
+                gc       =  0.0;
+            end
+            I(b_ne2) <+ white_noise(`MFACTOR_USE*4.0*`KB_NIST2004*tdevK*gc,"end 2 resistance thermal noise");
+            I(b_pc1) <+ white_noise(`MFACTOR_USE*2.0*`QQ_NIST2004*abs(Ip1),"end 1 parasitic shot noise");
+            I(b_pc2) <+ white_noise(`MFACTOR_USE*2.0*`QQ_NIST2004*abs(Ip2),"end 2 parasitic shot noise");
+        end
+    end // noise
+
+//
+//  Operating point information
+//
+//  for I=g(V,T)*V where T=I*V*rth, then (with underscore _ meaning partial differentiation)
+//  dI/dV=I_V+I_T*T_V=I_V+I_T*rth*(I+V*I_V)
+//
+//  Note that $mfactor scaling has to be explicitly applied to output quantities for
+//  LRM2.2 as this is handled automatically for flow access and contribss.
+//  For earlier versions the "m" handling is explicit and so should not be applied,
+//  and the ddx() operator is not defined.
+//
+
+    begin : OPinfo
+        v        =  V(n2,n1);
+        r0       =  r0/mMod;
+        r_dc     =  (1.0/geff+tcrc*(rc1_tnom+rc2_tnom))/mMod; // end resistance is added, this is an approximation
+        rth      =  1.0/(gth*mMod);
+        cth      =  cth*mMod;
+`ifdef __VAMS_COMPACT_MODELING__
+        ibody    =  Irb*mMod;
+        g_ac     =  ddx(ibody,V(i2));
+        didt     =  ddx(ibody,Temp(dt));
+        g_ac     =  g_ac+didt*rth*(ibody+Vrb*g_ac);
+`else // not__VAMS_COMPACT_MODELING__
+        ibody    =  Irb;             // already scaled by mMod
+        g_ac     =  1.0/(geff*mMod); // no simple calculation is available, this is a gross approximation
+`endif
+        if (abs(g_ac)>1.0e-99) begin
+            r_ac     =  1.0/g_ac;
+        end else begin
+            r_ac     =  1.0e99;
+        end
+    end // OPinfo
+
+end // analog
+endmodule

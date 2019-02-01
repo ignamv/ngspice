@@ -133,6 +133,13 @@ char *INPdomodel(CKTcircuit *ckt, struct card *image, INPtables * tab)
 				    ("Device type JFET2 not available in this binary\n");
 			    }
 			    break;
+                        case 3:
+                            type = INPtypelook("r3_cmc");
+                            if(type < 0) {
+                                err = INPmkTemp(
+                                        "Device type r3_cmc not available in this binary\n");
+                            }
+                            break;
 			default:		/* placeholder; use level 3 for the next model */
 			    err =
 				INPmkTemp
